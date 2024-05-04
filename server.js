@@ -35,11 +35,23 @@ app.use(
     saveUninitialized: true,
     cookie: { secure: false },
     key: "express.sid",
+    store: store,
   })
 );
 
 app.use(passport.initialize());
 app.use(passport.session());
+
+io.use(
+  passportSocketIo.authorize({
+    cookieParser: cookieParser,
+    key: "express.sid",
+    secret: process.env.SESSION_SECRET,
+    store: store,
+    success: onAuthorizeSuccess,
+    fail: onAuthorizeFail,
+  })
+);
 
 myDB(async (client) => {
   const myDataBase = await client.db("database").collection("users");
@@ -49,26 +61,32 @@ myDB(async (client) => {
 
   let currentUsers = 0;
   io.on("connection", (socket) => {
-    io.use(
-      passportSocketIo.authorize({
-        cookieParser: cookieParser,
-        key: "express.sid",
-        secret: process.env.SESSION_SECRET,
-        store: store,
-        success: onAuthorizeSuccess,
-        fail: onAuthorizeFail,
-      })
-    );
-
     ++currentUsers;
-
-    io.emit("user count", currentUsers);
     console.log("A user has connected");
+
+    io.emit("user", {
+      username: socket.request.user.username,
+      currentUsers,
+      connected: true,
+    });
+
+    socket.on("chat message", (message) => {
+      io.emit('chat message'),
+        {
+          username: socket.request.user.username,
+          message,
+        };
+    });
 
     socket.on("disconnect", () => {
       --currentUsers;
-      io.emit("user count", currentUsers);
-      console.log("User disconnected");
+      console.log("A user has disconnected");
+
+      io.emit("user", {
+        username: socket.request.user.username,
+        currentUsers,
+        connected: false,
+      });
     });
   });
 }).catch((e) => {
